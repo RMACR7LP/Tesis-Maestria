@@ -93,13 +93,13 @@ def angulo_entre_agentes(id_agente_1, id_agente_2, matriz_de_posiciones):
 
 
 def Radio_Influencia(D):
-    if 0 <= D <= 10*np.sqrt(6):
-        R = D**3/1000+4
-    elif D>10*np.sqrt(6):
-        R = 10
+    if 0 <= D <= 10*np.cbrt(6):
+        r = D**3/1000+4
+    elif D>10*np.cbrt(6):
+        r = 10
     else: 
-        R = 0
-    return R
+        r = 0
+    return r
 
 def Matriz_Escala(D, s):
     Radio = Radio_Influencia(D)
