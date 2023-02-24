@@ -51,7 +51,7 @@ def f_i(p, D, s, p_i):
 
 def I_i(x,y, D, s, p_i):
     p = np.array([x,y])
-    return f_i(p, D, s, p_i)/f_i(p_i+s*0.5, D, s,p_i)
+    return f_i(p, D, s, p_i)/f_i(p_i, D, s,p_i)
 
 def logistic(t):
     return 1/(1+np.exp(-t)) 
@@ -66,27 +66,47 @@ def PC(x,y, atacantes, defensas, Distancias, Velocidades, Posiciones):
     for i in range(atacantes,atacantes+defensas): # cambiar a (11,22)
         Influencia_Equipo_2 += I_i(x,y, Distancias[i], Velocidades[i], Posiciones[i])
 
-    return (Influencia_Equipo_1- Influencia_Equipo_2)
+    return logistic(Influencia_Equipo_1- Influencia_Equipo_2)
 
 
-xlist = np.linspace(-3.0, 3.0, 16)
-ylist = np.linspace(0.0, 6.0, 16)
-X, Y = np.meshgrid(xlist, ylist)
-vPC = np.vectorize(PC, excluded= ['atacantes', 'defensas', 'Distancias', 'Velocidades', 'Posiciones'])
-Z = vPC(X,Y,atacantes = 1,defensas = 1, Distancias = np.array([10,10]), Velocidades = np.array([[0,6],[0,6]]), Posiciones = np.array([[0,0],[-3,0]]))
-fig,ax=plt.subplots(1,1)
-cp = ax.contourf(X, Y, Z)
-fig.colorbar(cp) # Add a colorbar to a plot
-ax.set_xlabel('x (m)')
-ax.set_ylabel('y (m)')
-plt.show()
+def Mapa_de_Control(velocidad):
+    xlist = np.linspace(-3, 3, 16)
+    ylist = np.linspace(0.0, 6.0, 16)
+    X, Y = np.meshgrid(xlist, ylist)
+    vPC = np.vectorize(PC, excluded= ['atacantes', 'defensas', 'Distancias', 'Velocidades', 'Posiciones'])
+    Z = vPC(X,Y,atacantes = 2, defensas = 1, Distancias = np.array([24,0, 13]), Velocidades = np.array([[0,6],[0,6], velocidad]), Posiciones = np.array([[0,0], [24,0], [12,5]]))#, Distancias = np.array([0, np.sqrt(5), 2]), Velocidades = np.array([[0,6],[0,6], [0,-3]]), Posiciones = np.array([[0,0],[-1,2], [0,2]]))
+    fig,ax=plt.subplots(1,1)
+    cp = ax.contourf(X, Y, Z)
+    fig.colorbar(cp) # Add a colorbar to a plot
+    ax.set_xlabel('x (m)')
+    ax.set_ylabel('y (m)')
+    print(velocidad/6)
+    print(np.median(Z))
+    plt.show()
 
-positivos = 0
-for i in range(0,16):
-    for j in range(0,16):
-        if Z[i][j]>=0:
-            positivos += 1
-print(positivos/256)
+
+vector_1 = np.array([-12,-5])
+vector_1 = vector_1/np.linalg.norm(vector_1)
+vector_2 = np.array([0,1])
+angulo = np.arccos(np.dot(vector_1, vector_2))
+if vector_1[0]<0: 
+    angulo = -angulo
+
+Rotación = Matriz_Rotacion(np.array([np.cos(angulo/4), np.sin(angulo/4)]))
+direcciones = []
+for k in range(0,4):
+      direcciones.append(np.matmul(np.linalg.matrix_power(Rotación, k), vector_1))
+
+for direccion in direcciones:
+    Mapa_de_Control(6*direccion)
+
+
+# positivos = 0
+# for i in range(0,16):
+#     for j in range(0,16):
+#         if Z[i][j]>=0:
+#             positivos += 1
+# print(positivos/256)
 
 # s = np.array([[2,0],[0,2]])
 # t = np.array([[3,1],[4,5]])
