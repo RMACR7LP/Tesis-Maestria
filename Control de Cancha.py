@@ -11,13 +11,13 @@ import matplotlib.pyplot as plt
 
 
 def Radio_Influencia(D):
-    if 0 <= D <= 10*np.sqrt(6):
-        R = D**3/1000+4
-    elif D>10*np.sqrt(6):
-        R = 10
+    if 0 <= D <= 10*np.cbrt(6):
+        r = D**3/1000+4
+    elif D>10*np.cbrt(6):
+        r = 10
     else: 
-        R = 0
-    return R
+        r = 0
+    return r
 
 def Matriz_Escala(D, s):
     Radio = Radio_Influencia(D)
@@ -43,15 +43,16 @@ def Covarianza(D, s):
     return COV
 
 def f_i(p, D, s, p_i):
-    mu = p_i +s*0.5
+    mu_i = p_i +s*0.5
     COV = Covarianza(D,s)
     constante = (1/2*np.pi)/np.sqrt(np.linalg.det(COV))
-    exponente = np.matmul(np.transpose(p-mu), np.matmul(np.linalg.inv(COV), p-mu))
+    exponente = np.matmul(np.transpose(p-mu_i), np.matmul(np.linalg.inv(COV), p-mu_i))
     return constante*np.exp(-exponente/2)
 
 def I_i(x,y, D, s, p_i):
+    mu_i = p_i + s*0.5
     p = np.array([x,y])
-    return f_i(p, D, s, p_i)/f_i(p_i, D, s,p_i)
+    return f_i(p, D, s, p_i)/f_i(mu_i, D, s, p_i)
 
 def logistic(t):
     return 1/(1+np.exp(-t)) 
@@ -59,55 +60,31 @@ def logistic(t):
 
 def PC(x,y, atacantes, defensas, Distancias, Velocidades, Posiciones):
     Influencia_Equipo_1 = 0
-    for i in range(0,atacantes): # cambiar a (0,11)
+    for i in range(0,atacantes): 
         Influencia_Equipo_1 += I_i(x,y, Distancias[i], Velocidades[i], Posiciones[i])
 
     Influencia_Equipo_2 = 0
-    for i in range(atacantes,atacantes+defensas): # cambiar a (11,22)
+    for i in range(atacantes,atacantes+defensas): 
         Influencia_Equipo_2 += I_i(x,y, Distancias[i], Velocidades[i], Posiciones[i])
 
-    return logistic(Influencia_Equipo_1- Influencia_Equipo_2)
+    return Influencia_Equipo_1
+    #return logistic(Influencia_Equipo_1- Influencia_Equipo_2)
 
-
-def Mapa_de_Control(velocidad):
-    xlist = np.linspace(-3, 3, 16)
-    ylist = np.linspace(0.0, 6.0, 16)
+def Mapa_de_Control():
+    xlist = np.linspace(-12, 12, 50)
+    ylist = np.linspace(-12, 12, 50)
     X, Y = np.meshgrid(xlist, ylist)
     vPC = np.vectorize(PC, excluded= ['atacantes', 'defensas', 'Distancias', 'Velocidades', 'Posiciones'])
-    Z = vPC(X,Y,atacantes = 2, defensas = 1, Distancias = np.array([24,0, 13]), Velocidades = np.array([[0,6],[0,6], velocidad]), Posiciones = np.array([[0,0], [24,0], [12,5]]))#, Distancias = np.array([0, np.sqrt(5), 2]), Velocidades = np.array([[0,6],[0,6], [0,-3]]), Posiciones = np.array([[0,0],[-1,2], [0,2]]))
+    Z = vPC(X,Y,atacantes = 1, defensas = 0, Distancias = np.array([0]), Velocidades = np.array([[0,0]]), Posiciones = np.array([[0,0]]))#, Distancias = np.array([0, np.sqrt(5), 2]), Velocidades = np.array([[0,6],[0,6], [0,-3]]), Posiciones = np.array([[0,0],[-1,2], [0,2]]))
     fig,ax=plt.subplots(1,1)
-    cp = ax.contourf(X, Y, Z)
+    cp = ax.contourf(X, Y, Z, np.linspace(0,1, 15), vmin = 0, vmax = 1)
     fig.colorbar(cp) # Add a colorbar to a plot
+    ax.scatter(0,0, s=60, c='black', marker = "o")
+    ax.scatter(0,0, s=10, c='white', marker = "o")
     ax.set_xlabel('x (m)')
     ax.set_ylabel('y (m)')
-    print(velocidad/6)
-    print(np.median(Z))
     plt.show()
 
 
-vector_1 = np.array([-12,-5])
-vector_1 = vector_1/np.linalg.norm(vector_1)
-vector_2 = np.array([0,1])
-angulo = np.arccos(np.dot(vector_1, vector_2))
-if vector_1[0]<0: 
-    angulo = -angulo
 
-Rotación = Matriz_Rotacion(np.array([np.cos(angulo/4), np.sin(angulo/4)]))
-direcciones = []
-for k in range(0,4):
-      direcciones.append(np.matmul(np.linalg.matrix_power(Rotación, k), vector_1))
-
-for direccion in direcciones:
-    Mapa_de_Control(6*direccion)
-
-
-# positivos = 0
-# for i in range(0,16):
-#     for j in range(0,16):
-#         if Z[i][j]>=0:
-#             positivos += 1
-# print(positivos/256)
-
-# s = np.array([[2,0],[0,2]])
-# t = np.array([[3,1],[4,5]])
-# print(np.matmul(s,t))
+Mapa_de_Control()

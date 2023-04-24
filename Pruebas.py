@@ -5,54 +5,46 @@ import random
 import agentpy as ap
 import matplotlib.pyplot as plt
 import numpy as np
+import time
 import itertools
 
-def funciones_biyectivas(numero_jugadores, numero_defensas, id_jugador_con_balon):
-      atacantes = numero_jugadores- numero_defensas
-      iterable = ''
-      for atacante in range(2, atacantes + 2):
-            if atacante != id_jugador_con_balon: 
-                  iterable += str(atacante)
-      
-      permutaciones = itertools.permutations(iterable, numero_defensas)
-      x = np.arange(atacantes+2, numero_jugadores+2)
-      funciones = []
-      for perm in permutaciones:
-            funcion = []
-            for i in range(np.size(x)):
-                  funcion.append((x[i], int(perm[i])))
-            funciones.append(funcion)
-      
-      return funciones
 
+class Jugador_Simulado(ap.Agent):  
 
-def Matriz_Rotacion(s):
-    norma = np.linalg.norm(s)
-    if norma != 0: 
-        cos_theta = s[0]/norma
-        sen_theta = s[1]/norma
-        R = np.array([[cos_theta, -sen_theta],[sen_theta , cos_theta]])
-    else: 
-        R = np.array([[1,0],[0,1]])
-    return R
+      def setup(self):
+            self.id = self.id-2
+            
 
-# vector_1 = np.array([1,-1])
-# vector_2 = np.array([0,1])
+      def setup_pos_s(self, espacio):
+            self.espacio = espacio
+            self.pos = espacio.positions[self]   # .positions es una variable de la clase Space, es un diccionario que vincula a cada agente con sus coordenadas en el espacio.
+            self.record('posiciones', np.array([self.pos[0], self.pos[1]]))
 
-# angulo = np.arccos(np.dot(vector_1, vector_2)/np.linalg.norm(vector_1))
+      def printid(self):
+            print("\n "+ str(self.id))
 
-# Rotación = Matriz_Rotacion(np.array([np.cos(angulo/3), np.sin(angulo/3)]))
-# direcciones = []
-# for k in range(0,4):
-#       direcciones.append(np.matmul(np.linalg.matrix_power(Rotación, k), vector_1))
+class Jugada_modelo(ap.Model):
+      def setup(self):
+            self.espacio = ap.Space(self, shape=[7000, 9000])
+            self.agents = ap.AgentList(self, 5, Jugador_Simulado) #creamos una cantidad |jugadores| de agentes.
+            self.espacio.add_agents(self.agents, [[3450, 650],[2000, 1000], [5200, 1000], [2300, 2000], [4600, 2000]]) #metemos a los agentes creados en el espacio.
+            self.agents.setup_pos_s(self.espacio)
 
-
-velocidades = [np.zeros(2) for i in range(0,7)]
-print(velocidades)
-
-
-
-
+      def step(self):
+            self.agents.printid()
+parameters = {
+    'dimension': 2,
+    'size': 7000,
+    'seed': 123,
+    'steps': 60,
+    'jugadores': 5,
+    'atacantes': 3, 
+    'defensas': 2,
+    'individualidades': np.array([0.8, 0.8, 0.8]),
+    'agresividades': np.array([0.01, 0.01]),
+}        
+modelo = Jugada_modelo(parameters)
+resultado = modelo.run()
 
 
 
