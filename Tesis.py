@@ -205,7 +205,7 @@ def probabilidad_de_gol(pos_jugador, thetas_cubiertos):
     C = np.array([3866, 4500])
     AB = np.linalg.norm(A-B)
     AC = np.linalg.norm(A-C) 
-    theta_portería = np.arccos(-(40000 - AB**2 - AC**2)/(2*AB*AC))
+    theta_portería = np.arccos(-(732**2 - AB**2 - AC**2)/(2*AB*AC))
     probabilidad = probabilidad_de_gol_libre(pos_jugador)
     p_intercepción = 0.8 # valor aleatorio
     for theta_cubierto in thetas_cubiertos:
@@ -256,94 +256,113 @@ class Jugador_Simulado(ap.Agent):
         global compañero_a_pasar
         global tiempo_pase
         id = self.id 
-        # pos = self.espacio.positions.values()
-        # pos = np.array(list(pos)).T
         Balon_x = self.model.agents.log[id_posesion]['posiciones'][-1][0]
         Balon_y = self.model.agents.log[id_posesion]['posiciones'][-1][1]
         pos_Balon = np.array([Balon_x, Balon_y])
         Posiciones = self.espacio.positions.values()
         Posiciones = np.array(list(Posiciones)).T
-        Posiciones  = np.array([self.model.agents.log[i]['posiciones'][-1] for i in range(0, self.p.atacantes + self.p.defensas)])
-        Distancias = np.array([np.linalg.norm(Posiciones[i] - pos_Balon) for i in range(0, self.p.atacantes + self.p.defensas)]) #distancias a la pelota. NOTA estamos usando posiciones dinámicas, no las del frame anterior.
-        Velocidades = np.array([self.model.agents.log[i]['velocidad_nueva'][-1] for i in range(0, self.p.atacantes + self.p.defensas)])
+        Posiciones  = np.array([self.model.agents.log[i]['posiciones'][-1] for i in range(0, self.p.jugadores)])
+        Distancias = np.array([np.linalg.norm(Posiciones[i] - pos_Balon) for i in range(0, self.p.jugadores)]) #distancias a la pelota. NOTA estamos usando posiciones dinámicas, no las del frame anterior.
+        Velocidades = np.array([self.model.agents.log[i]['velocidad_nueva'][-1] for i in range(0, self.p.jugadores)])
         
+        """
+        Los posibles estados que consideraremos son:
         
-        # Definiremos tener posesion de la pelota como estado = 1, no tenerla como estado = 0
-        # y disparar como estado 2.
-
+        $ estado = 0, jugador sin posesión del balón
+        $ estado = 1, jugador con posesión del balón
+        $ estado = 2, jugador que disparó a portería
+        $ estado = -1, jugador que perdió la posesión del balón (esto incluye el caso en el que él era quien
+        iba a recibir el balón pero lo interceptaron)        
+        """
     
-    ########### Defensa #############    
+    ###################### Defensa ##########################    
         if self.estado == 0 and self.p.atacantes <= id:
+            """
+            Los defensas siempre mantendrán estado = 0.
+            """
             estado_nuevo = 0
 
-    ###### Atacante Sin Balón #######
+    ################# Atacante Sin Balón ####################
         elif self.estado == 0 and 0 <= id < self.p.atacantes:
+            """
+            Primero, verificamos si un pase va dirigido hacia el atacante y si tal 
+            es el caso hay que determinar si el pase ya va a ser recibido o si aún sigue
+            en trayectoria. Si el pase ya va a ser recibido, por cada defensa que se encuentre
+            en una vecindad de radio 1 del atacante, tiramos un volado para ver si el defensa
+            intercepta el balón justo antes de que el atacante lo reciba. El volado seguirá
+            una Ber(p) donde p es la libertad del atacante para un cuadro 1.5 x 1.5.
+            """
             if id == compañero_a_pasar:
                 id_posesion = id
-                if tiempo_pase>0: 
+                if tiempo_pase > 0: 
                     tiempo_pase -= 1
                     estado_nuevo = 0
                 elif tiempo_pase == 0: 
+                    estado_nuevo = 1
                     for jugador in range(self.p.atacantes,self.p.jugadores):
-                        if distancia_entre_agentes(self.id, jugador, Posiciones) <= 3:
+                        if distancia_entre_agentes(self.id, jugador, Posiciones) <= 1 and estado_nuevo != -1 :
                             seguridad_posesion = seguridad_de_pase(self.pos, self.p.atacantes, self.p.defensas, Distancias, Velocidades, Posiciones, 1.5)
-                            volado = np.random.binomial(1, 0.01) #seguridad_posesion)
+                            volado = np.random.binomial(1, seguridad_posesion)
                             if volado == 0: 
                                 estado_nuevo = -1
-                            else:
-                                estado_nuevo = 1
-                        else: 
-                            estado_nuevo = 1
             else: 
                 estado_nuevo = 0      
 
-    ###### Atacante con Balón #######
+    ################ Atacante con Balón #####################
         elif self.estado == 1: 
-                       
-            #Primero checa la probabilidad de gol desde su posicion y desde la de sus compañeros
+            """
+            Primero checa la probabilidad de gol desde su posicion y desde la de sus compañeros
+            """           
+
             P_gol = np.zeros(self.p.atacantes)
             P_gol_propia = probabilidad_de_gol_libre(self.pos)
             for atacante in range(self.p.atacantes):
                 P_gol[atacante] = probabilidad_de_gol_libre(Posiciones[atacante])
 
-            # Luego, evalúa si está suficientemente confiado para disparar
-            confianza = 0.7
+            """ Luego, evalúa si está suficientemente confiado para disparar """
+
+            confianza = self.p.confianzas[id]
             if P_gol_propia > confianza: 
                 confiado = 1
             else: 
                 confiado = 0
             
-            #A continuación evalúa si hay un compañero con mayor probabilidad de gol
+            """ A continuación evalúa si hay un compañero con mayor probabilidad de gol """
+
             Mejor_compañero = []
             for atacante in range(self.p.atacantes):
                 if P_gol_propia < P_gol[atacante]:
                     Mejor_compañero.append(atacante)
 
-            # Ahora, hay 4 escenarios posibles que dependen de (a) si está confiado para disparar
-            # y de (b) si hay un compañero con mayor probabilidad de gol: 
+            """
+            Ahora, hay 4 escenarios posibles que dependen de (a) si está confiado para disparar
+            y de (b) si hay un compañero con mayor probabilidad de gol: 
+            """
             
             individualidad = self.p.individualidades[id]
             # Caso 1: a sí y b sí.  
-            if confiado == 1 and len(Mejor_compañero)>0:
+            if confiado == 1 and len(Mejor_compañero) > 0:
                 conducir = 0
                 compañero_a_pasar = -1
                 for compañero in Mejor_compañero:
                     P_pase_compañero = seguridad_de_pase(Posiciones[compañero], self.p.atacantes, self.p.defensas, Distancias, Velocidades, Posiciones, 6) #tomamos un área cuadrada de 6*6 metros
-                if P_gol_propia*individualidad - P_pase_compañero*(1-individualidad)< 0: #este sería un número entre 1 y -1
+                if individualidad*P_gol_propia - (1-individualidad)*P_pase_compañero < 0: #este sería un número entre 1 y -1
                         if compañero_a_pasar == -1: 
                             compañero_a_pasar = compañero
                         else:
                             P_pase_compañero_a_pasar = seguridad_de_pase(Posiciones[compañero_a_pasar], self.p.atacantes, self.p.defensas, Distancias, Velocidades, Posiciones, 6)
-                            efectividad_1 = P_gol[compañero_a_pasar]*0.5 + P_pase_compañero_a_pasar*0.5 #podriamos poner un parametro en ves del 0.5
-                            efectividad_2 = P_gol[compañero]*0.5 + P_pase_compañero*0.5
-                            if efectividad_2>efectividad_1:
+                            val_pos_1 = P_gol[compañero_a_pasar]*0.5 + P_pase_compañero_a_pasar*0.5 #podriamos poner un parametro en ves del 0.5
+                            val_pos_2 = P_gol[compañero]*0.5 + P_pase_compañero*0.5
+                            if val_pos_2 > val_pos_1:
                                 compañero_a_pasar = compañero
+                
                 if compañero_a_pasar == -1: 
                     disparar = 1
+
                 elif compañero_a_pasar != -1:
                     disparar = 0
                     tiempo_pase = duracion_pase(distancia_entre_agentes(compañero_a_pasar, self.id, Posiciones))
-
+                    print("Caso 1")
 
             # Caso 2: a sí y b no.
             elif confiado == 1 and len(Mejor_compañero) == 0:
@@ -351,47 +370,50 @@ class Jugador_Simulado(ap.Agent):
                 conducir = 0
                 
             # Caso 3: a no y b sí:
-            elif confiado == 0 and len(Mejor_compañero)>0:
+            elif confiado == 0 and len(Mejor_compañero) > 0:
                 disparar = 0
                 compañero_a_pasar = -1
                 for compañero in Mejor_compañero:
-                    P_pase_compañero = seguridad_de_pase(Posiciones[compañero], self.p.atacantes, self.p.defensas, Distancias, Velocidades, Posiciones,6)
-                    if P_pase_compañero> individualidad: 
+                    P_pase_compañero = seguridad_de_pase(Posiciones[compañero], self.p.atacantes, self.p.defensas, Distancias, Velocidades, Posiciones,3)
+                    print(P_pase_compañero)
+                    if P_pase_compañero > confianza and individualidad*P_gol_propia - (1-individualidad)*P_pase_compañero < 0: 
                         if compañero_a_pasar == -1:
                             compañero_a_pasar = compañero
                         else:
                             P_pase_compañero_a_pasar = seguridad_de_pase(Posiciones[compañero_a_pasar], self.p.atacantes, self.p.defensas, Distancias, Velocidades, Posiciones, 6)
-                            efectividad_1 = P_gol[compañero_a_pasar]*0.5 + P_pase_compañero_a_pasar*0.5 #podriamos poner un parametro en ves del 0.5
-                            efectividad_2 = P_gol[compañero]*0.5 + P_pase_compañero*0.5
-                            if efectividad_2>=efectividad_1:
+                            val_pos_1 = P_gol[compañero_a_pasar]*0.5 + P_pase_compañero_a_pasar*0.5 #podriamos poner un parametro en ves del 0.5
+                            val_pos_2 = P_gol[compañero]*0.5 + P_pase_compañero*0.5
+                            if val_pos_2 >= val_pos_1:
                                 compañero_a_pasar = compañero
                 if compañero_a_pasar == -1:
                     conducir = 1
                 elif compañero_a_pasar != -1:
+                    print(P_pase_compañero)
                     conducir = 0
                     tiempo_pase = duracion_pase(distancia_entre_agentes(compañero_a_pasar, self.id, Posiciones))
-
+                    print("Caso 3")
             # Caso 4: a no y b no: 
             else: 
                 disparar = 0
                 compañero_a_pasar = -1
                 for compañero in range(self.p.atacantes):
-                    P_pase_compañero = seguridad_de_pase(Posiciones[compañero], self.p.atacantes, self.p.defensas, Distancias, Velocidades, Posiciones,6)
-                    if Posiciones[compañero][1] > self.pos[1] and P_pase_compañero>individualidad:
+                    P_pase_compañero = seguridad_de_pase(Posiciones[compañero], self.p.atacantes, self.p.defensas, Distancias, Velocidades, Posiciones, 1.5)
+                    print(P_pase_compañero)
+                    if Posiciones[compañero][1] > self.pos[1] - 300 and P_pase_compañero > confianza:
                         if compañero_a_pasar == -1:
                             compañero_a_pasar = compañero
                         else:
-                            P_pase_compañero_a_pasar = seguridad_de_pase(Posiciones[compañero_a_pasar], self.p.atacantes, self.p.defensas, Distancias, Velocidades, Posiciones,6)
-                            efectividad_1 = P_gol[compañero_a_pasar]*0.5 + P_pase_compañero_a_pasar*0.5 #podriamos poner un parametro en ves del 0.5
-                            efectividad_2 = P_gol[compañero]*0.5 + P_pase_compañero*0.5
-                            if efectividad_2>efectividad_1:
+                            P_pase_compañero_a_pasar = seguridad_de_pase(Posiciones[compañero_a_pasar], self.p.atacantes, self.p.defensas, Distancias, Velocidades, Posiciones, 3)
+                            val_pos_1 = P_gol[compañero_a_pasar]*0.5 + P_pase_compañero_a_pasar*0.5 #podriamos poner un parametro en ves del 0.5
+                            val_pos_2 = P_gol[compañero]*0.5 + P_pase_compañero*0.5
+                            if val_pos_2 > val_pos_1:
                                 compañero_a_pasar = compañero
                 if compañero_a_pasar == -1: 
                     conducir = 1
                 elif compañero_a_pasar != -1:
                     conducir = 0
                     tiempo_pase = duracion_pase(distancia_entre_agentes(compañero_a_pasar, self.id, Posiciones))
-
+                    print("Caso 4")
             # Y aquí estan las reglas de cambio de estado basado en los cuatro casos mencionados
             
             if conducir == 1:
@@ -410,6 +432,7 @@ class Jugador_Simulado(ap.Agent):
                     if distancia_entre_agentes(self.id, defensa, Posiciones) <= 1:
                         seguridad_posesion = seguridad_de_pase(self.pos, self.p.atacantes, self.p.defensas, Distancias, Velocidades, Posiciones, 1.5)
                         volado = np.random.binomial(1, seguridad_posesion)
+                        print(seguridad_posesion, "intento de quitarsela")
                         if volado == 0: 
                             estado_nuevo = -1
 
@@ -425,10 +448,7 @@ class Jugador_Simulado(ap.Agent):
         
 
     def cambio_velocidad(self):
-        id = self.id #el id comienza a contar desde 2
-        # pos = self.espacio.positions.values()
-        # pos = np.array(list(pos)).T
-        #self.record('posiciones', np.array([self.pos[0], self.pos[1]]))
+        id = self.id 
         Balon_x = self.model.agents.log[id_posesion]['posiciones'][-1][0]
         Balon_y = self.model.agents.log[id_posesion]['posiciones'][-1][1]
         pos_Balon = np.array([Balon_x, Balon_y])
@@ -447,40 +467,63 @@ class Jugador_Simulado(ap.Agent):
                     Velocidades[i] = x
    
     ############## Atacante con Balon ###########
+
         if self.estado == 1:
-            individualidad = self.p.individualidades[id]
-            # Primero haremos como que el que tiene la pelota siempre va a la direccion del punto medio de la porteria            
-            v_1 = normalizacion(np.array([3500-self.pos[0],4500- self.pos[1]]))*individualidad
-            v_2 = np.array([0,1])*(1-individualidad)
-            velocidad_nueva = 60*normalizacion(v_1+v_2) # el 60 está como comodin para la magnitud de la velocidad
+            """
+            La dirección en la que se moverá será un promedio ponderado entre la dirección
+            que "maximiza" su probabilidad de gol, que tomaremos como ir directamente hacia
+            el punto medio de la portería, y la dirección que mejore la situación de su equipo, 
+            que tomaremos como la dirección vertical. El peso del promedio será la individualidad
+            del jugador.
+            """
+
+            individualidad = self.p.individualidades[id]         
+            v_1 = normalizacion(np.array([3500-self.pos[0],4500- self.pos[1]]))
+            v_2 = np.array([0,1])
+            velocidad_nueva = 60*normalizacion(individualidad*v_1 + (1- individualidad)*v_2) # el 60 está como comodin para la magnitud de la velocidad
             
         elif self.estado == 2: 
+            """
+            Si dispara a portería, se queda quieto.
+            """
             velocidad_nueva = np.array([0,0])
         
         elif self.estado == -1:
+            """
+            Si un defensa le quita el balón, se queda quieto.
+            """
             velocidad_nueva = np.array([0,0])
            
     ############## Atacante sin Balon ############
         elif self.estado == 0 and 0 <= id < self.p.atacantes:
+            """
+            Así como en el caso anterior, la dirección en la que se moverá será un promedio 
+            ponderado entre la dirección que "maximiza" su probabilidad de gol, que de igual manera 
+            tomaremos como ir directamente hacia el punto medio de la portería, y la dirección que 
+            mejore la situación de su equipo, con la diferencia que para esta tomaremos la linea recta
+            hacia la mejor esquina trasera del area grande: la izquierda si el atacante está a la 
+            izquierda del balón y la derecha si el atacante está a la derecha del balón. 
+            El peso del promedio de nuevo será la individualidad del jugador.
+            """
+
             individualidad = self.p.individualidades[id] # esto controla si el jugador busca recibir pase para centrar o un pase para disparar.
-            v_1 = normalizacion(np.array([3500-self.pos[0],4500- self.pos[1]]))*individualidad # qué tanto quiere ir a la portería?
-            if self.pos[0]<=Balon_x:
-                v_2 = normalizacion(np.array([1484-self.pos[0], 4500-self.pos[1]]))*(1-individualidad) # qué tanto se va a abrir para buscar recibir el pase y centrar.
-            elif self.pos[0]> Balon_x:
-                v_2 = normalizacion(np.array([5516-self.pos[0], 4500-self.pos[1]]))*(1-individualidad)
+            v_1 = normalizacion(np.array([3500-self.pos[0],4500- self.pos[1]])) # qué tanto quiere ir a la portería?
+            if self.pos[0] <= Balon_x:
+                v_2 = normalizacion(np.array([1484-self.pos[0], 4500-self.pos[1]])) # qué tanto se va a abrir para buscar recibir el pase y centrar.
+            elif self.pos[0] > Balon_x:
+                v_2 = normalizacion(np.array([5516-self.pos[0], 4500-self.pos[1]]))
             
 
-            velocidad_nueva = 60*normalizacion(v_1+v_2) # aquí el 60 es un comodin para la velocidad maxima
+            velocidad_nueva = 60*normalizacion(individualidad*v_1 + (1-individualidad)*v_2) # aquí el 60 es un comodin para la velocidad maxima
 
 
     ############## Defensa ################
 
         elif self.p.atacantes <= id : 
-            Rapidez_max = [6.8,6.2] # Estas son las velocidades máximas en m/s
             if self.estado == 0: 
                 """""    
                 El defensa tomará en cuenta a dos contrincantes para decidir cómo se moverá:
-                (1) el jugador que tiene el balón y (2) el atacante sin balón más cercano al defensa.
+                (1) el jugador que tiene el balón y (2) el atacante sin balón que tome como su marca.
                 Para definir las marcas se tomarán las posibles asignaciones 1 a 1 entre el 
                 conjunto de defensas y un subconjunto de atacantes sin balón. De entre todas estas
                 seleccionaremos la asignación óptima.
@@ -551,17 +594,16 @@ class Jugador_Simulado(ap.Agent):
                 valor_de_posicion[id_marca] = seguridad*0.5 + probabilidad_de_gol_libre(Posiciones[id_marca])*0.5 #para la marca la probabilidad de gol y la seguridad de pase son igual de importantes.
         
                 
-
                 """""
                 Tomando en cuenta también una dirección vertical para que no se pase.
                 """""
-                v_3 = np.array([0,0.1])
+                v_3 = np.array([0,1])
                 agresividad = self.p.agresividades[id-5]
 
                 
-            velocidad_nueva = 60*normalizacion((1-agresividad)*valor_de_posicion[id_marca]*v_1 + agresividad*valor_de_posicion[id_posesion]*v_2 + v_3)
+            velocidad_nueva = 60*normalizacion((1-agresividad)*valor_de_posicion[id_marca]*v_1 + agresividad*valor_de_posicion[id_posesion]*v_2 + 0.1*v_3)
         
-        ########### Intercepción, Disparo, Offside ######### 
+        ########### Intercepción, Disparo, Offside ############# 
         for jugador in range(self.p.atacantes):
             estado = self.model.agents.log[jugador]['estado'][-1]
             if estado is None: 
@@ -622,7 +664,7 @@ class Jugada_modelo(ap.Model):
     def setup(self):
         self.espacio = ap.Space(self, shape=[self.p.size, 9000])
         self.agents = ap.AgentList(self, self.p.jugadores, Jugador_Simulado) #creamos una cantidad |jugadores| de agentes.
-        self.espacio.add_agents(self.agents, [[3450, 650],[2000, 1000], [5200, 1000], [2300, 2000], [4600, 2000]]) #metemos a los agentes creados en el espacio.
+        self.espacio.add_agents(self.agents, [[1000, 900],[2000, 1000], [2500, 1000], [1500, 2000], [2000, 1500]]) #metemos a los agentes creados en el espacio.
         self.agents.setup_pos_s(self.espacio)
         self.espacio.record('Gol', 0)
         
@@ -685,13 +727,14 @@ def animacion_completa(m, p):
 parameters = {
     'dimension': 2,
     'size': 7000,
-    'seed': 123,
+    'seed': 12356,
     'steps': 60,
     'jugadores': 5,
     'atacantes': 3, 
     'defensas': 2,
-    'individualidades': np.array([0.8, 0.8, 0.8]),
-    'agresividades': np.array([0.63, 0.58]), # [0.56, 0.65]
+    'individualidades': np.array([0.4, 0.4, 0.5]),
+    'confianzas': np.array([0.5, 0.7, 0.7]) ,
+    'agresividades': np.array([0.55, 0.58]), # [0.56, 0.65]
 }
 
 animacion_completa(Jugada_modelo, parameters)
