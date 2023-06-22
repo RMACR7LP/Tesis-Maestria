@@ -86,9 +86,9 @@ def duracion_pase(d):
     tarda en recorrer la pelota entre ambos puntos. El tiempo que se tardará la pelota seguirá la 
     siguiente regla:
 
-    || t  (segundos) ||   0.5    ||    1    ||   1.5    ||    2    ||
-    ----------------------------------------------------------------
-    || d (metros)    ||  [0, 10)  ||  [10,25) || [25, 40) || [40, infinito) ||  
+    || t  (segundos) ||    0.5    ||     1    ||   1.5    ||       2        ||
+    --------------------------------------------------------------------------
+    ||  d (metros)   ||  [0, 10)  ||  [10,25) || [25, 40) || [40, infinito) ||  
 
     La función retornará la cantidad de frames que tomará en realizarse el pase.
 
@@ -167,7 +167,7 @@ def I_i(x,y, D, s, p_i):
     return f_i(p, D, s, p_i)/f_i(mu_i, D, s,p_i)
 
 def logistic(t):
-    return 1/(1+np.exp(-10*t)) 
+    return 1/(1+np.exp(-3*t)) 
 
 def PC(x,y, atacantes, defensas, Distancias, Velocidades, Posiciones):
     Influencia_Equipo_1 = 0
@@ -219,8 +219,9 @@ def probabilidad_de_gol(pos_jugador, thetas_cubiertos):
     return probabilidad
 
 #################### Simulacion de Contragolpe #######################
-id_posesion = 0 
+id_posesion = 2 
 compañero_a_pasar = -1
+linea_de_pase = []
 tiempo_pase = 0
 
 def normalizacion(v):
@@ -230,14 +231,17 @@ def normalizacion(v):
     return v / norm
 
 
-def seguridad_de_pase(punto, a, b, c, d, e, metros): # este debe ser un número entre 0 y 1 
-    x = punto[0]
-    y = punto[1]
-    xlist = np.linspace(x-100*metros/2, x+100*metros/2, 16)
-    ylist = np.linspace(y, y + 100*metros, 16)
+def libertad(punto, a, b, c, d, e, metros): # este debe ser un número entre 0 y 1 
+    x = punto[0]/100
+    y = punto[1]/100
+    xlist = np.linspace(x-metros/2, x+metros/2, 16)
+    ylist = np.linspace(y, y + metros, 16)
     X, Y = np.meshgrid(xlist, ylist)
     vPC = np.vectorize(PC, excluded= ['atacantes', 'defensas', 'Distancias', 'Velocidades', 'Posiciones'])
-    Z = vPC(X,Y, atacantes = a, defensas = b, Distancias = c , Velocidades = d , Posiciones = e)
+    c = [x/100 for x in c] # escala 1:100 
+    d = [x/10 for x in d] # escala 1:10, esto porque la simulación corre a 10 fps
+    e = [x/100 for x in e] # escala 1:100
+    Z = vPC(X,Y, atacantes = a, defensas = b, Distancias = c, Velocidades = d , Posiciones = e)
     return np.median(Z)
 
 class Jugador_Simulado(ap.Agent):  
@@ -260,11 +264,10 @@ class Jugador_Simulado(ap.Agent):
         global id_posesion
         global compañero_a_pasar
         global tiempo_pase
+        global linea_de_pase
         Balon_x = self.model.agents.log[id_posesion]['posiciones'][-1][0]
         Balon_y = self.model.agents.log[id_posesion]['posiciones'][-1][1]
         pos_Balon = np.array([Balon_x, Balon_y])
-        Posiciones = self.espacio.positions.values()
-        Posiciones = np.array(list(Posiciones)).T
         Posiciones  = np.array([self.model.agents.log[i]['posiciones'][-1] for i in range(0, self.p.jugadores)])
         Distancias = np.array([np.linalg.norm(Posiciones[i] - pos_Balon) for i in range(0, self.p.jugadores)]) #distancias a la pelota. NOTA estamos usando posiciones dinámicas, no las del frame anterior.
         Velocidades = np.array([self.model.agents.log[i]['velocidad_nueva'][-1] for i in range(0, self.p.jugadores)])
@@ -278,6 +281,8 @@ class Jugador_Simulado(ap.Agent):
         $ estado = -1, jugador que perdió la posesión del balón (esto incluye el caso en el que él era quien
         iba a recibir el balón pero lo interceptaron)        
         """
+        if self.id == 0: 
+            linea_de_pase = []
     
     ########### Intercepción, Disparo, Offside ############# 
         Alto = 0
@@ -306,7 +311,7 @@ class Jugador_Simulado(ap.Agent):
                 en trayectoria. Si el pase ya va a ser recibido, por cada defensa que se encuentre
                 en una vecindad de radio 1 del atacante, tiramos un volado para ver si el defensa
                 intercepta el balón justo antes de que el atacante lo reciba. El volado seguirá
-                una Ber(p) donde p es la libertad del atacante para un cuadro 1.5 x 1.5.
+                una Ber(p) donde p es la libertad del atacante para un cuadro 2 x 2.
                 """
                 if self.id == compañero_a_pasar:
                     id_posesion = self.id
@@ -317,9 +322,8 @@ class Jugador_Simulado(ap.Agent):
                         estado_nuevo = 1
                         for jugador in range(self.p.atacantes,self.p.jugadores):
                             if distancia_entre_agentes(self.id, jugador, Posiciones) <= 2 and estado_nuevo != -1 :
-                                seguridad_posesion = seguridad_de_pase(self.pos, self.p.atacantes, self.p.defensas, Distancias, Velocidades, Posiciones, 4)
-                                volado = np.random.binomial(1, seguridad_posesion)
-                                print("intento de intercepción", seguridad_posesion)
+                                libertad_posesion = libertad(self.pos, self.p.atacantes, self.p.defensas, Distancias, Velocidades, Posiciones, 2)
+                                volado = np.random.binomial(1, libertad_posesion)
                                 if volado == 0: 
                                     estado_nuevo = -1
                     
@@ -337,7 +341,6 @@ class Jugador_Simulado(ap.Agent):
                     for defensa in range(self.p.atacantes,self.p.jugadores):
                         if distancia_entre_agentes(self.id, defensa, Posiciones) <= 1:
                             volado = np.random.binomial(1, self.p.dribbling[self.id])
-                            print("intento de quitarsela")
                             if volado == 0: 
                                 intercepción = 1
                                 estado_nuevo = -1
@@ -363,17 +366,15 @@ class Jugador_Simulado(ap.Agent):
                     individualidad = self.p.individualidades[self.id]
                     # Caso 1: Sí está confiado.
                     if confiado == 1 :
-                        print("caso 1")
                         conducir = 0
                         compañero_a_pasar = -1 
                         Control_de_cancha = np.zeros(self.p.atacantes)
                         val_pos = np.zeros(self.p.atacantes)
                         for atacante in range(self.p.atacantes):
-                            Control_de_cancha[atacante] = seguridad_de_pase(Posiciones[atacante], self.p.atacantes, self.p.defensas, Distancias, Velocidades, Posiciones, 4) #tomamos un área cuadrada de 6*6 metros
+                            Control_de_cancha[atacante] = libertad(Posiciones[atacante], self.p.atacantes, self.p.defensas, Distancias, Velocidades, Posiciones, 4) #tomamos un área cuadrada de 6*6 metros
                             val_pos[atacante] = 0.5*(P_gol[atacante] + Control_de_cancha[atacante]) 
                         for atacante in range(self.p.atacantes):
-                            print(Control_de_cancha[atacante])
-                            if individualidad*val_pos[self.id] - (1-individualidad)*val_pos[atacante] < 0: #este sería un número entre 1 y -1
+                            if atacante != self.id and individualidad*val_pos[self.id] - (1-individualidad)*val_pos[atacante] < 0: #este sería un número entre 1 y -1
                                 if compañero_a_pasar == -1: 
                                     compañero_a_pasar = atacante
                                 else:
@@ -381,27 +382,24 @@ class Jugador_Simulado(ap.Agent):
                                     val_pos_2 = val_pos[atacante]
                                     if val_pos_2 > val_pos_1:
                                         compañero_a_pasar = atacante
-                    
+
                         if compañero_a_pasar == -1: 
                             disparar = 1
                         else:
                             disparar = 0
-                            print(compañero_a_pasar, val_pos)
                             tiempo_pase = duracion_pase(distancia_entre_agentes(compañero_a_pasar, self.id, Posiciones))
-                           
+                            linea_de_pase = [self.id, compañero_a_pasar]
                         
                     # Caso 2: No está confiado.
                     elif confiado == 0:
-                        print("caso 2")
                         disparar = 0
                         compañero_a_pasar = -1
                         Control_de_cancha = np.zeros(self.p.atacantes)
                         val_pos = np.zeros(self.p.atacantes)
                         for atacante in range(self.p.atacantes):
-                            Control_de_cancha[atacante] = seguridad_de_pase(Posiciones[atacante], self.p.atacantes, self.p.defensas, Distancias, Velocidades, Posiciones, 4) #tomamos un área cuadrada de 6*6 metros
+                            Control_de_cancha[atacante] = libertad(Posiciones[atacante], self.p.atacantes, self.p.defensas, Distancias, Velocidades, Posiciones, 4) #tomamos un área cuadrada de 6*6 metros
                             val_pos[atacante] = 0.5*(P_gol[atacante] + Control_de_cancha[atacante])
                         for atacante in range(self.p.atacantes):
-                            print(Control_de_cancha[atacante])
                             if individualidad*val_pos[self.id] - (1-individualidad)*val_pos[atacante] < 0 and Control_de_cancha[atacante] > confianza: 
                                 if compañero_a_pasar == -1:
                                     compañero_a_pasar = atacante
@@ -415,9 +413,9 @@ class Jugador_Simulado(ap.Agent):
                             conducir = 1
                         else:
                             conducir = 0
-                            print(compañero_a_pasar, val_pos)
                             tiempo_pase = duracion_pase(distancia_entre_agentes(compañero_a_pasar, self.id, Posiciones))
-                  
+                            linea_de_pase = [self.id, compañero_a_pasar]
+                            print(val_pos, Control_de_cancha)
                     """ Y aquí estan las reglas de cambio de estado basado en los casos mencionados """
                     if conducir == 1:
                         estado_nuevo = 1
@@ -436,6 +434,7 @@ class Jugador_Simulado(ap.Agent):
                 
         self.record('estado', estado_nuevo)
         self.estado = estado_nuevo
+        
     
 
     def cambio_velocidad(self):
@@ -544,36 +543,36 @@ class Jugador_Simulado(ap.Agent):
 
                     """""
                     Una vez hallada la asignación óptima, definirá para su marca y el jugador que tiene el balón, de manera individual,
-                    cuál es la dirección en la que debe moverse para minimizar la seguridad del atacante. Entre las direcciones
+                    cuál es la dirección en la que debe moverse para minimizar la libertad del atacante. Entre las direcciones
                     posibles, será directamente hacia la dirección en la que se encuentra el defensa o theta/4 hacia "arriba" 
                     de esa direccion.
                     """""
                     theta, direccion_0 = angulo_entre_agentes(self.id, id_marca, Posiciones)
                     Rotacion = Matriz_Rotacion(np.array([np.cos(theta/4), np.sin(theta/4)]))
                     direcciones = []
-                    seguridad_marca_minima = 1
+                    libertad_marca_minima = 1
                     v_1 = np.array([0,0])
                     for k in range(0,2):
                         direcciones.append(np.matmul(np.linalg.matrix_power(Rotacion, k), direccion_0))
                         Velocidades_modificado = Velocidades
                         Velocidades_modificado[self.id] = 60*direcciones[k] #aquí 60 representa la magnitud de la velocidad
-                        seguridad_k = seguridad_de_pase(Posiciones[id_marca], self.p.atacantes, self.p.defensas, Distancias, Velocidades_modificado, Posiciones, 4)
-                        if seguridad_k <= seguridad_marca_minima:
-                            seguridad_marca_minima = seguridad_k
+                        libertad_k = libertad(Posiciones[id_marca], self.p.atacantes, self.p.defensas, Distancias, Velocidades_modificado, Posiciones, 4)
+                        if libertad_k <= libertad_marca_minima:
+                            libertad_marca_minima = libertad_k
                             v_1 = direcciones[k]
 
                     theta, direccion_0 = angulo_entre_agentes(self.id, id_posesion, Posiciones)
                     Rotacion = Matriz_Rotacion(np.array([np.cos(theta/4), np.sin(theta/4)]))
                     direcciones = []
-                    seguridad_posesion_minima = 1
+                    libertad_posesion_minima = 1
                     v_2 = np.array([0,0])
                     for k in range(0,2):
                         direcciones.append(np.matmul(np.linalg.matrix_power(Rotacion, k), direccion_0))
                         Velocidades_modificado = Velocidades
                         Velocidades_modificado[self.id] = 60*direcciones[k] #aquí 60 representa la magnitud de la velocidad
-                        seguridad_k = seguridad_de_pase(Posiciones[id_posesion], self.p.atacantes, self.p.defensas, Distancias, Velocidades_modificado, Posiciones, 2)
-                        if seguridad_k < seguridad_posesion_minima:
-                            seguridad_posesion_minima = seguridad_k
+                        libertad_k = libertad(Posiciones[id_posesion], self.p.atacantes, self.p.defensas, Distancias, Velocidades_modificado, Posiciones, 2)
+                        if libertad_k < libertad_posesion_minima:
+                            libertad_posesion_minima = libertad_k
                             v_2 = direcciones[k]
 
 
@@ -581,15 +580,15 @@ class Jugador_Simulado(ap.Agent):
                     Finalmente, el defensa evaluará el "valor" de la posición de su marca y de quién 
                     tenga el balón y a partir de este dará más prioridad a una dirección sobre otra entre
                     las dos calculadas anteriormente (la marca y quien tiene el balón).
-                    El valor de la posición será un tipo de promedio entre su seguridad de pase y su 
+                    El valor de la posición será un tipo de promedio entre su libertad de pase y su 
                     probablidad de gol.
                     """""
 
                     valor_de_posicion = np.zeros(self.p.atacantes) 
-                    seguridad_atacante_balon = seguridad_de_pase(Posiciones[id_posesion], self.p.atacantes, self.p.defensas, Distancias, Velocidades, Posiciones, 2)
-                    valor_de_posicion[id_posesion] = seguridad_atacante_balon*0.3 + probabilidad_de_gol_libre(Posiciones[id_posesion])*0.7 # para quien tiene la posesión debe pesar más su probabilidad de gol
-                    seguridad = seguridad_de_pase(Posiciones[id_marca], self.p.atacantes, self.p.defensas, Distancias, Velocidades, Posiciones, 4)
-                    valor_de_posicion[id_marca] = seguridad*0.5 + probabilidad_de_gol_libre(Posiciones[id_marca])*0.5 #para la marca la probabilidad de gol y la seguridad de pase son igual de importantes.
+                    libertad_atacante_balon = libertad(Posiciones[id_posesion], self.p.atacantes, self.p.defensas, Distancias, Velocidades, Posiciones, 2)
+                    valor_de_posicion[id_posesion] = libertad_atacante_balon*0.3 + probabilidad_de_gol_libre(Posiciones[id_posesion])*0.7 # para quien tiene la posesión debe pesar más su probabilidad de gol
+                    libertad = libertad(Posiciones[id_marca], self.p.atacantes, self.p.defensas, Distancias, Velocidades, Posiciones, 4)
+                    valor_de_posicion[id_marca] = libertad*0.5 + probabilidad_de_gol_libre(Posiciones[id_marca])*0.5 #para la marca la probabilidad de gol y la libertad de pase son igual de importantes.
             
                     
                     """""
@@ -642,13 +641,11 @@ class Jugador_Simulado(ap.Agent):
                         theta_cubiertos.append(theta_cubierto)
 
                     p_gol = probabilidad_de_gol(Posiciones[jugador], theta_cubiertos)
-                    print("p_gol = ", p_gol)
                     volado = np.random.binomial(1, p_gol)
                     if volado == 1: 
                         Gol = 1
                     else: 
                         Gol = -1
-                    print(Gol)
             self.espacio.record('Gol', Gol)
 
 
@@ -657,7 +654,7 @@ class Jugada_modelo(ap.Model):
     def setup(self):
         self.espacio = ap.Space(self, shape=[self.p.size, 9000])
         self.agents = ap.AgentList(self, self.p.jugadores, Jugador_Simulado) #creamos una cantidad |jugadores| de agentes.
-        self.espacio.add_agents(self.agents, [[1000, 900],[2000, 950], [2500, 700], [1500, 2000], [2000, 1500]]) #metemos a los agentes creados en el espacio.
+        self.espacio.add_agents(self.agents, [[4300, 650],[2000, 650], [6500, 650], [2500, 750], [5500, 750]]) #metemos a los agentes creados en el espacio.
         self.agents.setup_pos_s(self.espacio)
         self.espacio.record('Gol', 0)
         
@@ -683,6 +680,9 @@ def animacion_individual(m, ax):
 
     estados = []
 
+    if linea_de_pase != []:
+        ax.plot([pos[0][linea_de_pase[0]], pos[0][linea_de_pase[1]]], [pos[1][linea_de_pase[0]], pos[1][linea_de_pase[1]]], color = "red", linestyle = "dotted")
+
     for atacante in range(m.p.atacantes):
         temporal = m.agents.log[atacante]
         if len(temporal)!=0:
@@ -702,7 +702,7 @@ def animacion_individual(m, ax):
         elif estado == -1: 
              ax.scatter(pos[0][atacante],pos[1][atacante], s=50, c='#808080', marker = "o")
 
-
+        
     for defensa in range(m.p.atacantes, 5):
         ax.scatter(pos[0][defensa],pos[1][defensa], s=50, c='black', marker = "o")    
  
@@ -728,10 +728,10 @@ parameters = {
     'jugadores': 5,
     'atacantes': 3, 
     'defensas': 2,
-    'individualidades': np.array([0.65, 0.65, 0.75]),   # debe ser mayor a 0.5
-    'confianzas': np.array([0.5, 0.3, 0.4]), # no debe ser mayor a 0.75
+    'individualidades': np.array([0.53, 0.65, 0.5]),   
+    'confianzas': np.array([0.6, 0.6, 0.6]), 
     'dribbling': np.array([0.6, 0.8, 0.6]),
-    'agresividades': np.array([0.7, 0.58]), # rango razonable [0.5, 0.9]
+    'agresividades': np.array([0.72, 0.7]), # rango razonable [0.5, 0.9]
 }
 
 animacion_completa(Jugada_modelo, parameters)
