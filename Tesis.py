@@ -191,17 +191,26 @@ def probabilidad_de_gol_libre(pos_jugador):
     """""  
     x = pos_jugador[0]
     y = pos_jugador[1]    
-    x = (x-3500)/100
-    y = (y-4500)/100
+    x = (x - 3500)/100
+    y = (y - 4500)/100
+    h = (x**2 + (alpha*y)**2 - 3.66**2)/(2*y*alpha**2)
     try: 
-        r_0 = 1/alpha * np.sqrt( (x**2 + (alpha*y)**2 -3.66**2)**2/(2*alpha*y)**2 + 3.66**2 )
-        d = r_0 + r_0*np.sqrt(1-3.66**2/(alpha*r_0)**2)
-        probabilidad = 1/(1+1/3*np.exp((-2*np.arctan(3.66/d)+2*np.arctan(3.66/11))/0.1)) 
+        d_0 = -h + np.sqrt(h**2 + (3.66/alpha)**2)
+        probabilidad =  1/(1+1/3*np.exp((-2*np.arctan(3.66/d_0)+2*np.arctan(3.66/11))/0.1))
     except RuntimeWarning:
         if -3.66 < x < 3.66:
             probabilidad = 1
         else: 
             probabilidad = 0  
+    # try:  
+    #     r_0 = 1/alpha * np.sqrt( (x**2 + (alpha*y)**2 -3.66**2)**2/(2*alpha*y)**2 + 3.66**2 )
+    #     d = r_0 + r_0*np.sqrt(1-3.66**2/(alpha*r_0)**2)
+    #     probabilidad = 1/(1+1/3*np.exp((-2*np.arctan(3.66/d)+2*np.arctan(3.66/11))/0.1)) 
+    # except RuntimeWarning:
+    #     if -3.66 < x < 3.66:
+    #         probabilidad = 1
+    #     else: 
+    #         probabilidad = 0  
     
     return probabilidad   
 
@@ -215,11 +224,11 @@ def probabilidad_de_gol(pos_jugador, thetas_cubiertos):
     probabilidad = probabilidad_de_gol_libre(pos_jugador)
     p_intercepción = 0.8 # valor aleatorio
     for theta_cubierto in thetas_cubiertos:
-        probabilidad *= p_intercepción*(theta_cubierto/theta_portería)
+        probabilidad *= 1 - p_intercepción*(theta_cubierto/theta_portería)
     return probabilidad
 
 #################### Simulacion de Contragolpe #######################
-id_posesion = 2 
+id_posesion = 0 
 compañero_a_pasar = -1
 linea_de_pase = []
 tiempo_pase = 0
@@ -254,7 +263,7 @@ class Jugador_Simulado(ap.Agent):
         else: 
             self.estado = 0
         self.record('estado', self.estado)
-    
+        
     def setup_pos_s(self, espacio):
         self.espacio = espacio
         self.pos = espacio.positions[self]   # .positions es una variable de la clase Space, es un diccionario que vincula a cada agente con sus coordenadas en el espacio.
@@ -283,6 +292,7 @@ class Jugador_Simulado(ap.Agent):
         """
         if self.id == 0: 
             linea_de_pase = []
+            
     
     ########### Intercepción, Disparo, Offside ############# 
         Alto = 0
@@ -423,7 +433,7 @@ class Jugador_Simulado(ap.Agent):
                     if disparar == 1: 
                         estado_nuevo = 2
 
-                    if conducir == 0 and disparar == 0: 
+                    if conducir == 0 and disparar == 0: # Aquí sucede el pase.
                         estado_nuevo = 0
                 
             elif self.estado == 2: # Realizó un disparo
@@ -431,12 +441,10 @@ class Jugador_Simulado(ap.Agent):
             
             elif self.estado == -1: # Le arrebataron el balón
                 estado_nuevo = -1
-                
         self.record('estado', estado_nuevo)
         self.estado = estado_nuevo
-        
-    
 
+    
     def cambio_velocidad(self):
         Balon_x = self.model.agents.log[id_posesion]['posiciones'][-1][0]
         Balon_y = self.model.agents.log[id_posesion]['posiciones'][-1][1]
@@ -560,7 +568,7 @@ class Jugador_Simulado(ap.Agent):
                         if libertad_k <= libertad_marca_minima:
                             libertad_marca_minima = libertad_k
                             v_1 = direcciones[k]
-
+                    
                     theta, direccion_0 = angulo_entre_agentes(self.id, id_posesion, Posiciones)
                     Rotacion = Matriz_Rotacion(np.array([np.cos(theta/4), np.sin(theta/4)]))
                     direcciones = []
@@ -584,11 +592,11 @@ class Jugador_Simulado(ap.Agent):
                     probablidad de gol.
                     """""
 
-                    valor_de_posicion = np.zeros(self.p.atacantes) 
+                    val_pos = np.zeros(self.p.atacantes) 
                     libertad_atacante_balon = libertad(Posiciones[id_posesion], self.p.atacantes, self.p.defensas, Distancias, Velocidades, Posiciones, 2)
-                    valor_de_posicion[id_posesion] = libertad_atacante_balon*0.3 + probabilidad_de_gol_libre(Posiciones[id_posesion])*0.7 # para quien tiene la posesión debe pesar más su probabilidad de gol
-                    libertad = libertad(Posiciones[id_marca], self.p.atacantes, self.p.defensas, Distancias, Velocidades, Posiciones, 4)
-                    valor_de_posicion[id_marca] = libertad*0.5 + probabilidad_de_gol_libre(Posiciones[id_marca])*0.5 #para la marca la probabilidad de gol y la libertad de pase son igual de importantes.
+                    val_pos[id_posesion] = libertad_atacante_balon*0.3 + probabilidad_de_gol_libre(Posiciones[id_posesion])*0.7 # para quien tiene la posesión debe pesar más su probabilidad de gol
+                    libertad_marca = libertad(Posiciones[id_marca], self.p.atacantes, self.p.defensas, Distancias, Velocidades, Posiciones, 4)
+                    val_pos[id_marca] = libertad_marca*0.5 + probabilidad_de_gol_libre(Posiciones[id_marca])*0.5 #para la marca la probabilidad de gol y la libertad de pase son igual de importantes.
             
                     
                     """""
@@ -597,7 +605,7 @@ class Jugador_Simulado(ap.Agent):
                     v_3 = np.array([0,1])
                     agresividad = self.p.agresividades[self.id - self.p.atacantes]
     
-                velocidad_nueva = 60*normalizacion((1-agresividad)*valor_de_posicion[id_marca]*v_1 + agresividad*valor_de_posicion[id_posesion]*v_2 + 0.1*v_3)
+                velocidad_nueva = 60*normalizacion((1-agresividad)*val_pos[id_marca]*v_1 + agresividad*val_pos[id_posesion]*v_2 + 0.1*v_3)
 
         self.espacio.move_by(self, velocidad_nueva)
         self.record('posiciones', np.array([self.pos[0], self.pos[1]]))
@@ -654,7 +662,7 @@ class Jugada_modelo(ap.Model):
     def setup(self):
         self.espacio = ap.Space(self, shape=[self.p.size, 9000])
         self.agents = ap.AgentList(self, self.p.jugadores, Jugador_Simulado) #creamos una cantidad |jugadores| de agentes.
-        self.espacio.add_agents(self.agents, [[4300, 650],[2000, 650], [6500, 650], [2500, 750], [5500, 750]]) #metemos a los agentes creados en el espacio.
+        self.espacio.add_agents(self.agents, [[3450, 650],[2000, 1000], [5200, 1000], [2300, 2000], [4600, 2000]]) #metemos a los agentes creados en el espacio.
         self.agents.setup_pos_s(self.espacio)
         self.espacio.record('Gol', 0)
         
@@ -728,10 +736,10 @@ parameters = {
     'jugadores': 5,
     'atacantes': 3, 
     'defensas': 2,
-    'individualidades': np.array([0.53, 0.65, 0.5]),   
-    'confianzas': np.array([0.6, 0.6, 0.6]), 
+    'individualidades': np.array([0.55, 0.6, 0.55]),   
+    'confianzas': np.array([0.6, 0.6, 0.7]), 
     'dribbling': np.array([0.6, 0.8, 0.6]),
-    'agresividades': np.array([0.72, 0.7]), # rango razonable [0.5, 0.9]
+    'agresividades': np.array([0.7, 0.7]), 
 }
 
 animacion_completa(Jugada_modelo, parameters)
